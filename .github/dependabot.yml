@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    # Group security updates together
+    groups:
+      security-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "security"
+    # Prioritize security updates
+    labels:
+      - "dependencies"
+      - "security"
+    # Specify reviewers for security updates
+    reviewers:
+      - "security-team"
+    
+  # Also check the vulnerable-app directory
+  - package-ecosystem: "npm"
+    directory: "/vulnerable-app"
+    schedule:
+      interval: "daily"
+    labels:
+      - "dependencies"
+      - "security"
+      - "vulnerable-app"

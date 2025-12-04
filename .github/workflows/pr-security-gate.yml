@@ -1,0 +1,110 @@
+name: PR Security Gate
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  security-gate:
+    name: Security Gate Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Check for new vulnerabilities in PR
+        run: |
+          echo "## PR Security Gate" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if package.json was modified
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "package.json"; then
+            echo "📦 package.json changes detected - running security checks" >> $GITHUB_STEP_SUMMARY
+            
+            FAILED=false
+            
+            for pkg in $(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep "package.json"); do
+              echo "### Checking: $pkg" >> $GITHUB_STEP_SUMMARY
+              
+              # Check for vulnerable Next.js versions being added
+              if grep -q '"next"' "$pkg"; then
+                NEXT_VERSION=$(grep -o '"next": *"[^"]*"' "$pkg" | grep -o '[0-9][^"]*' | head -1)
+                
+                # List of known vulnerable patterns
+                if [[ "$NEXT_VERSION" =~ ^15\.(0\.[0-4]|1\.[0-8]|2\.[0-5]|3\.[0-5]|4\.[0-7]|5\.[0-6]) ]] || \
+                   [[ "$NEXT_VERSION" =~ ^16\.0\.[0-6] ]] || \
+                   [[ "$NEXT_VERSION" =~ ^14\.3\.0-canary ]]; then
+                  echo "::error file=$pkg::PR introduces vulnerable Next.js version $NEXT_VERSION (CVE-2025-66478)"
+                  echo "❌ **BLOCKED**: Next.js $NEXT_VERSION is vulnerable to CVE-2025-66478" >> $GITHUB_STEP_SUMMARY
+                  FAILED=true
+                fi
+              fi
+              
+              # Check for vulnerable React versions
+              if grep -q '"react"' "$pkg"; then
+                REACT_VERSION=$(grep -o '"react": *"[^"]*"' "$pkg" | grep -o '[0-9][^"]*' | head -1)
+                
+                if [[ "$REACT_VERSION" =~ ^19\.(0\.0|1\.[01]|2\.0)$ ]]; then
+                  echo "::error file=$pkg::PR introduces vulnerable React version $REACT_VERSION (CVE-2025-55182)"
+                  echo "❌ **BLOCKED**: React $REACT_VERSION is vulnerable to CVE-2025-55182" >> $GITHUB_STEP_SUMMARY
+                  FAILED=true
+                fi
+              fi
+            done
+            
+            if [ "$FAILED" = true ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Remediation Required" >> $GITHUB_STEP_SUMMARY
+              echo "Please update to patched versions:" >> $GITHUB_STEP_SUMMARY
+              echo "- Next.js: 15.0.5, 15.1.9, 15.2.6, 15.3.6, 15.4.8, 15.5.7, or 16.0.7+" >> $GITHUB_STEP_SUMMARY
+              echo "- React: 19.0.1, 19.1.2, or 19.2.1+" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            else
+              echo "✅ No vulnerable packages detected in changes" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "ℹ️ No package.json changes in this PR" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Add PR Comment for Security Issues
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⚠️ Security Gate Failed
+              
+            This PR introduces packages affected by **CVE-2025-66478** (CVSS 10.0 Critical).
+
+            ### Required Action
+            Please update to patched versions before this PR can be merged:
+
+            **Next.js:**
+            \`\`\`bash
+            npm install next@15.0.5   # for 15.0.x
+            npm install next@15.1.9   # for 15.1.x
+            npm install next@15.2.6   # for 15.2.x
+            npm install next@15.3.6   # for 15.3.x
+            npm install next@15.4.8   # for 15.4.x
+            npm install next@15.5.7   # for 15.5.x
+            npm install next@16.0.7   # for 16.0.x
+            \`\`\`
+
+            **React:**
+            \`\`\`bash
+            npm install react@latest react-dom@latest
+            \`\`\`
+
+            ### References
+            - [React Security Advisory](https://react.dev/blog/2025/12/03/critical-security-vulnerability-in-react-server-components)
+            - [Next.js Security Advisory](https://nextjs.org/blog/CVE-2025-66478)`
+            })

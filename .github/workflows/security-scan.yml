@@ -1,0 +1,165 @@
+name: Security Scan - React Server Components CVE
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+jobs:
+  # Job 1: Check for CVE-2025-66478 vulnerability
+  cve-check:
+    name: CVE-2025-66478 Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Check for vulnerable packages
+        id: vuln-check
+        run: |
+          echo "## CVE-2025-66478 Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          VULNERABLE=false
+          
+          # Find all package.json files
+          for pkg in $(find . -name "package.json" -not -path "*/node_modules/*"); do
+            echo "### Scanning: $pkg" >> $GITHUB_STEP_SUMMARY
+            
+            DIR=$(dirname "$pkg")
+            
+            # Check Next.js version
+            if grep -q '"next"' "$pkg"; then
+              NEXT_VERSION=$(grep -o '"next": *"[^"]*"' "$pkg" | grep -o '[0-9][^"]*' | head -1)
+              echo "- Next.js version: $NEXT_VERSION" >> $GITHUB_STEP_SUMMARY
+              
+              # Check if vulnerable (15.x before patches, 16.x before 16.0.7)
+              if [[ "$NEXT_VERSION" =~ ^15\.(0\.[0-4]|1\.[0-8]|2\.[0-5]|3\.[0-5]|4\.[0-7]|5\.[0-6]) ]]; then
+                echo "  - ⚠️ **VULNERABLE** - Needs upgrade" >> $GITHUB_STEP_SUMMARY
+                VULNERABLE=true
+              elif [[ "$NEXT_VERSION" =~ ^16\.0\.[0-6] ]]; then
+                echo "  - ⚠️ **VULNERABLE** - Needs upgrade to 16.0.7+" >> $GITHUB_STEP_SUMMARY
+                VULNERABLE=true
+              elif [[ "$NEXT_VERSION" =~ ^14\.3\.0-canary ]]; then
+                echo "  - ⚠️ **VULNERABLE** - Canary build, downgrade to stable 14.x" >> $GITHUB_STEP_SUMMARY
+                VULNERABLE=true
+              else
+                echo "  - ✅ Version appears safe" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+            
+            # Check React version
+            if grep -q '"react"' "$pkg"; then
+              REACT_VERSION=$(grep -o '"react": *"[^"]*"' "$pkg" | grep -o '[0-9][^"]*' | head -1)
+              echo "- React version: $REACT_VERSION" >> $GITHUB_STEP_SUMMARY
+              
+              if [[ "$REACT_VERSION" =~ ^19\.(0\.0|1\.[01]|2\.0)$ ]]; then
+                echo "  - ⚠️ **VULNERABLE** - Needs upgrade" >> $GITHUB_STEP_SUMMARY
+                VULNERABLE=true
+              fi
+            fi
+            
+            # Check for RSC packages
+            for RSC_PKG in "react-server-dom-webpack" "react-server-dom-parcel" "react-server-dom-turbopack"; do
+              if grep -q "\"$RSC_PKG\"" "$pkg"; then
+                RSC_VERSION=$(grep -o "\"$RSC_PKG\": *\"[^\"]*\"" "$pkg" | grep -o '[0-9][^"]*' | head -1)
+                echo "- $RSC_PKG version: $RSC_VERSION" >> $GITHUB_STEP_SUMMARY
+                
+                if [[ "$RSC_VERSION" =~ ^19\.(0\.0|1\.[01]|2\.0)$ ]]; then
+                  echo "  - ⚠️ **VULNERABLE**" >> $GITHUB_STEP_SUMMARY
+                  VULNERABLE=true
+                fi
+              fi
+            done
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          if [ "$VULNERABLE" = true ]; then
+            echo "::error::CVE-2025-66478 VULNERABILITY DETECTED! Update packages immediately."
+            echo "vulnerable=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ No CVE-2025-66478 vulnerability detected." >> $GITHUB_STEP_SUMMARY
+            echo "vulnerable=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Job 2: Full npm audit
+  npm-audit:
+    name: NPM Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Find and audit all npm projects
+        run: |
+          echo "## NPM Audit Results" >> $GITHUB_STEP_SUMMARY
+          
+          for pkg in $(find . -name "package.json" -not -path "*/node_modules/*"); do
+            DIR=$(dirname "$pkg")
+            echo "### Auditing: $DIR" >> $GITHUB_STEP_SUMMARY
+            
+            cd "$DIR"
+            
+            if [ -f "package-lock.json" ] || [ -f "npm-shrinkwrap.json" ]; then
+              npm audit --audit-level=critical 2>&1 | tee audit-output.txt || true
+              
+              if grep -q "found 0 vulnerabilities" audit-output.txt; then
+                echo "✅ No critical vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+              else
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                cat audit-output.txt >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              fi
+              
+              rm -f audit-output.txt
+            else
+              echo "⚠️ No lockfile found, skipping audit" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            cd - > /dev/null
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done
+
+  # Job 3: CodeQL Analysis
+  codeql:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

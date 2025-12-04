@@ -1,0 +1,30 @@
+{
+  "name": "vulnerable-nextjs-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "⚠️ INTENTIONALLY VULNERABLE - DO NOT DEPLOY - For security testing only",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "security:check": "npm audit --audit-level=critical",
+    "security:fix": "npm audit fix"
+  },
+  "dependencies": {
+    "next": "15.0.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "eslint": "^8",
+    "eslint-config-next": "15.0.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
