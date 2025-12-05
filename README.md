@@ -19,6 +19,11 @@ react-security-reaction/
 ├── .github/
 │   ├── copilot-instructions.md    # AI-assisted security detection
 │   ├── dependabot.yml              # Automated dependency updates
+│   ├── prompts/
+│   │   ├── check-react-vulnerability-cve-2025-66478.prompt.md  # Local scan prompt
+│   │   └── scan-github-repos.prompt.md                         # GitHub scanner prompt
+│   ├── instructions/
+│   │   └── react-vulnerability-cve-2025-66478.instructions.md  # Security rules
 │   └── workflows/
 │       ├── security-scan.yml       # Daily CVE scanning workflow
 │       └── pr-security-gate.yml    # Block vulnerable PRs
@@ -74,12 +79,33 @@ The included workflows will:
 - Block PRs that introduce vulnerable packages
 - Generate security reports in GitHub Actions summaries
 
-### Method 3: Manual Script
+### Method 3: Manual Script (Local Repos)
 
 ```powershell
-# Run the bulk scanner
+# Run the bulk scanner on local repositories
 .\scripts\scan-repos.ps1 -Path "C:\Code" -OutputReport "security-report.md"
 ```
+
+### Method 4: GitHub Repository Scanner (Remote Repos)
+
+Use the Copilot prompt to scan GitHub repos without cloning:
+
+```bash
+# Open the prompt file in VS Code and run it, or use the slash command:
+/scan-github-repos
+
+# Scan a specific organization
+/scan-github-repos owner=neudesic
+
+# Filter by language
+/scan-github-repos filter-language=TypeScript
+```
+
+This method uses GitHub MCP tools and CLI to:
+- Enumerate all accessible repositories
+- Check for vulnerable package versions remotely
+- Audit Dependabot and security settings
+- Generate comprehensive reports
 
 ## 🛠️ Remediation
 

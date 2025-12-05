@@ -365,6 +365,90 @@ Write-Host "Found $($vulnerableRepos.Count) vulnerable repositories"
 
 ---
 
+## Approach 8: GitHub MCP + CLI Repository Scanner (Remote Scanning)
+
+### What It Is
+A Copilot prompt that leverages GitHub MCP tools and GitHub CLI to scan remote repositories without requiring them to be cloned locally.
+
+### Use Case
+- Security teams need to audit multiple repos they have access to
+- Consultants want to scan client organization repos
+- Quick triage of vulnerability exposure across an org
+
+### How It Works
+1. Uses GitHub API to enumerate accessible repositories
+2. Fetches `package.json` files directly from GitHub (no local clone needed)
+3. Checks security settings (Dependabot status, secret scanning, etc.)
+4. Generates comprehensive vulnerability + configuration report
+
+### Implementation
+Located at: `.github/prompts/scan-github-repos.prompt.md`
+
+**Key Capabilities:**
+- Scan all repos for a user or organization
+- Check for CVE-2025-66478 vulnerable packages
+- Audit Dependabot configuration status
+- Generate markdown/CSV/JSON reports
+
+**Usage Examples:**
+```bash
+# Scan your own repos
+/scan-github-repos
+
+# Scan an organization
+/scan-github-repos owner=neudesic
+
+# Filter to TypeScript projects only
+/scan-github-repos filter-language=TypeScript
+
+# Generate CSV report
+/scan-github-repos output-format=csv report-path=audit.csv
+```
+
+### GitHub CLI Commands Used
+```powershell
+# List repos with security settings
+gh api /repos/{owner}/{repo} --jq '{
+  name: .name,
+  private: .private,
+  security_and_analysis: .security_and_analysis
+}'
+
+# Check for dependabot.yml
+gh api /repos/{owner}/{repo}/contents/.github/dependabot.yml
+
+# Get package.json content (base64 encoded)
+gh api /repos/{owner}/{repo}/contents/path/to/package.json --jq '.content'
+
+# Search for package.json files
+gh api '/search/code?q=filename:package.json+repo:{owner}/{repo}'
+```
+
+### Strengths
+- No local clone required
+- Can scan hundreds of repos quickly
+- Checks both vulnerability AND configuration status
+- Works with MCP tools or CLI
+
+### Limitations
+- Rate limited by GitHub API (5000 requests/hour authenticated)
+- Requires appropriate access permissions
+- Code search may not find recently pushed files
+- Some security settings only visible to admins
+
+### Comparison with Local Scanner (Approach 7)
+
+| Feature | Local Scanner | GitHub Scanner |
+|---------|--------------|----------------|
+| Requires clone | Yes | No |
+| Scan speed | Fast (local) | Medium (API) |
+| Access scope | Cloned repos only | All accessible repos |
+| Dependabot check | No | Yes |
+| Security settings | No | Yes |
+| Offline capable | Yes | No |
+
+---
+
 ## Implementation Roadmap
 
 ### Phase 1: Immediate (This Week)
@@ -372,7 +456,8 @@ Write-Host "Found $($vulnerableRepos.Count) vulnerable repositories"
 2. ✅ Create GitHub Actions workflows
 3. ✅ Create consultant playbook
 4. ✅ Create test vulnerable application
-5. [ ] Distribute to team leads
+5. ✅ Create GitHub MCP/CLI scanner prompt
+6. [ ] Distribute to team leads
 
 ### Phase 2: Short-term (Next 2 Weeks)
 1. [ ] Audit Dependabot adoption across Neudesic repos
