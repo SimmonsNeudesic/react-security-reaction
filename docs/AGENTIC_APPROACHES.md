@@ -365,21 +365,23 @@ Write-Host "Found $($vulnerableRepos.Count) vulnerable repositories"
 
 ---
 
-## Approach 8: GitHub MCP + CLI Repository Scanner (Remote Scanning)
+## Approach 8: GitHub Repository Scanner (Remote Scanning) ⭐ **RECOMMENDED**
 
 ### What It Is
-A Copilot prompt that leverages GitHub MCP tools and GitHub CLI to scan remote repositories without requiring them to be cloned locally.
+A Copilot prompt that delegates to a high-performance Python script using GitHub CLI and API to scan remote repositories for vulnerabilities and security configurations.
 
 ### Use Case
 - Security teams need to audit multiple repos they have access to
 - Consultants want to scan client organization repos
 - Quick triage of vulnerability exposure across an org
+- "See something, say something" at scale
 
 ### How It Works
-1. Uses GitHub API to enumerate accessible repositories
-2. Fetches `package.json` files directly from GitHub (no local clone needed)
-3. Checks security settings (Dependabot status, secret scanning, etc.)
-4. Generates comprehensive vulnerability + configuration report
+1. Copilot prompt invokes Python script with GitHub CLI integration
+2. Uses GitHub Trees API for reliable package.json discovery in subdirectories
+3. Parallel processing for efficient scanning of hundreds of repos
+4. Checks security settings (Dependabot status, secret scanning, etc.)
+5. Generates comprehensive vulnerability + configuration report
 
 ### Implementation
 Located at: `.github/prompts/scan-github-repos.prompt.md`
@@ -389,14 +391,26 @@ Located at: `.github/prompts/scan-github-repos.prompt.md`
 - Check for CVE-2025-66478 vulnerable packages
 - Audit Dependabot configuration status
 - Generate markdown/CSV/JSON reports
+- Parallel processing for scale (500+ repos)
 
 **Usage Examples:**
 ```bash
-# Scan your own repos
+# Scan your own repos (via Copilot prompt)
 /scan-github-repos
 
-# Scan an organization
+# Scan an organization (via Copilot prompt)
 /scan-github-repos owner=neudesic
+
+# Direct Python script usage
+python scripts/scan-github-repos.py --owner neudesic --workers 10 --format csv
+```
+
+### Why This is Recommended
+- **Best User Experience**: Simple prompt interface, comprehensive reports
+- **Speed & Efficiency**: Parallel processing, optimized API calls
+- **Completeness**: Reliable detection in subdirectories via Trees API
+- **Scale**: Designed for large organizations (tested with 500+ repos)
+- **"See Something, Say Something"**: Empowers consultants to scan what they can access
 
 # Filter to TypeScript projects only
 /scan-github-repos filter-language=TypeScript
@@ -438,14 +452,17 @@ gh api '/search/code?q=filename:package.json+repo:{owner}/{repo}'
 
 ### Comparison with Local Scanner (Approach 7)
 
-| Feature | Local Scanner | GitHub Scanner |
+| Feature | Local Scanner | GitHub Scanner (Recommended) |
 |---------|--------------|----------------|
 | Requires clone | Yes | No |
-| Scan speed | Fast (local) | Medium (API) |
+| Scan speed | Fast (local) | Fast (parallel API calls) |
 | Access scope | Cloned repos only | All accessible repos |
 | Dependabot check | No | Yes |
 | Security settings | No | Yes |
+| Subdirectory detection | Manual | Automatic (Trees API) |
+| Scale capability | Limited | 500+ repos efficiently |
 | Offline capable | Yes | No |
+| User experience | Manual | Seamless prompt interface |
 
 ---
 
@@ -456,7 +473,7 @@ gh api '/search/code?q=filename:package.json+repo:{owner}/{repo}'
 2. ✅ Create GitHub Actions workflows
 3. ✅ Create consultant playbook
 4. ✅ Create test vulnerable application
-5. ✅ Create GitHub MCP/CLI scanner prompt
+5. ✅ Create GitHub repository scanner (Python script + Copilot prompt) ⭐ **RECOMMENDED**
 6. [ ] Distribute to team leads
 
 ### Phase 2: Short-term (Next 2 Weeks)
@@ -514,12 +531,15 @@ The combination of:
 2. **GitHub Actions** (active, blocking)
 3. **Dependabot** (automated updates)
 4. **GHAS** (enterprise visibility)
-5. **MCP Server** (future proactive monitoring)
-6. **Copilot Coding Agent** (automated remediation)
+5. **GitHub Repository Scanner** (scale auditing) ⭐ **RECOMMENDED**
+6. **MCP Server** (future proactive monitoring)
+7. **Copilot Coding Agent** (automated remediation)
 
 ...creates a defense-in-depth approach that scales to individual consultants while providing organizational visibility where possible.
 
 The key insight is that **we don't need one system to see everything**. We need to **empower everyone to see what they can see** and provide them the tools to act immediately.
+
+**Recommended Starting Point**: Use the GitHub Repository Scanner via `/scan-github-repos owner=neudesic` for immediate visibility across accessible repositories.
 
 ---
 

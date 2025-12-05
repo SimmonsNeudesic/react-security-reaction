@@ -129,22 +129,30 @@ Look for these in `package.json`:
 }
 ```
 
-### Phase 3: Code Pattern Analysis
+### Phase 4: Bulk Repository Scanning ⭐ **RECOMMENDED**
 
-Search for these patterns indicating RSC usage:
+For consultants working across multiple repositories or organizations, use the automated GitHub repository scanner:
 
-```typescript
-// Server Actions/Functions
-'use server'
+```bash
+# Use Copilot prompt for seamless scanning
+/scan-github-repos owner=client-org-name
 
-// Server Components with data fetching
-async function ServerComponent() {
-  const data = await fetch(...)
-}
-
-// Dynamic imports with server-only
-import 'server-only'
+# Or run Python script directly
+python scripts/scan-github-repos.py --owner client-org-name --limit 100
 ```
+
+**Benefits:**
+- Scans hundreds of repos in minutes
+- Detects vulnerabilities in subdirectories automatically
+- Audits Dependabot and security settings
+- Generates comprehensive reports
+- No local repository access required
+
+**When to Use:**
+- Client assessments
+- Organization-wide audits
+- Multi-repo projects
+- "See something, say something" initiatives
 
 ---
 

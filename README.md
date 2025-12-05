@@ -34,7 +34,8 @@ react-security-reaction/
 │   ├── package.json                # Intentionally vulnerable deps
 │   └── src/                        # Sample RSC implementation
 ├── scripts/
-│   └── scan-repos.ps1              # Bulk repository scanner
+│   ├── scan-repos.ps1              # PowerShell local scanner
+│   └── scan-github-repos.py        # Python GitHub API scanner (for large orgs)
 └── README.md                       # This file
 ```
 
@@ -86,26 +87,44 @@ The included workflows will:
 .\scripts\scan-repos.ps1 -Path "C:\Code" -OutputReport "security-report.md"
 ```
 
-### Method 4: GitHub Repository Scanner (Remote Repos)
+### Method 4: GitHub Repository Scanner (Remote Repos - Scale) ⭐ **RECOMMENDED**
 
-Use the Copilot prompt to scan GitHub repos without cloning:
+For scanning large organizations with hundreds of repos, use the Python script via the Copilot prompt for the best user experience:
 
 ```bash
-# Open the prompt file in VS Code and run it, or use the slash command:
-/scan-github-repos
-
-# Scan a specific organization
+# Use the Copilot prompt for seamless scanning
 /scan-github-repos owner=neudesic
 
-# Filter by language
-/scan-github-repos filter-language=TypeScript
+# Or run the Python script directly
+python scripts/scan-github-repos.py --owner neudesic --limit 50
 ```
 
-This method uses GitHub MCP tools and CLI to:
-- Enumerate all accessible repositories
-- Check for vulnerable package versions remotely
-- Audit Dependabot and security settings
-- Generate comprehensive reports
+**Why this is recommended:**
+- **Speed**: Parallel processing handles 500+ repos efficiently
+- **Completeness**: Detects vulnerabilities in subdirectories reliably
+- **User Experience**: Simple prompt interface with comprehensive reports
+- **Scale**: Designed for large organizations like Neudesic
+
+# Scan with limits and parallel workers
+python scripts/scan-github-repos.py --owner neudesic --limit 100 --workers 10
+
+# Generate CSV report
+python scripts/scan-github-repos.py --owner neudesic --format csv --output audit.csv
+
+# Filter by language
+python scripts/scan-github-repos.py --owner neudesic --language TypeScript
+```
+
+**Or use the Copilot prompt** which will run the script for you:
+```
+/scan-github-repos owner=neudesic
+```
+
+The Python script:
+- Scans repositories in parallel (5-10 workers)
+- Uses Git Trees API for reliable package.json discovery
+- Handles SSO-protected organizations
+- Generates markdown, CSV, or JSON reports
 
 ## 🛠️ Remediation
 

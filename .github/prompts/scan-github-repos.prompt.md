@@ -17,6 +17,12 @@ parameters:
   - name: report-path
     description: Path to save the report file
     default: "github-security-scan-report.md"
+  - name: limit
+    description: Maximum number of repos to scan (0 = all)
+    default: "0"
+  - name: workers
+    description: Number of parallel workers for scanning
+    default: "5"
 ---
 
 # GitHub Repository Security Scanner
@@ -32,323 +38,173 @@ This prompt scans your accessible GitHub repositories to identify:
 - Include Forks: `{{include-forks}}`
 - Output Format: `{{output-format}}`
 - Report Path: `{{report-path}}`
-
-## Agent Execution Constraints (IMPORTANT)
-
-- Use only the GitHub MCP tools and the GitHub CLI (`gh`) described in this prompt.
-- If MCP or CLI tools are unavailable, do not proceed with execution locally. This tool is intended for wide access across multiple repositories via GitHub APIs - do not run locally unless explicitly allowed.
-- Do NOT create, write, or modify any PowerShell, Bash, or other helper scripts as a local or repository file during prompt execution. This does not prevent you from generating the final report file specified by `{{report-path}}`.
-- Process fetched file contents in-memory and return structured results (JSON/markdown/csv) as the prompt output rather than emitting new files on disk.
-- If you need to demonstrate decoding or parsing, show a one-line example (PowerShell or POSIX) for a human operator to run manually — do not execute or generate helper scripts as part of the agent run.
-- If `gh` is not available in the execution environment, prefer MCP tools (e.g., `mcp_github_search_code`) and describe required `gh` commands for operators instead of creating files.
-
-The remainder of this prompt assumes the agent will follow these constraints strictly.
+- Limit: `{{limit}}` repos (0 = all)
+- Workers: `{{workers}}` parallel threads
 
 ---
 
-## PHASE 1: Discover Repositories
+## Execution Method
 
-### Step 1.1: Get Current User Context
+**This prompt uses a Python script for efficient scanning at scale.**
 
-First, identify the authenticated GitHub user to understand the scope of accessible repositories:
+The script `scripts/scan-github-repos.py` handles:
+- Parallel scanning of hundreds of repositories
+- Git Trees API for reliable package.json discovery (no indexing delays)
+- In-memory base64 decoding and JSON parsing
+- Comprehensive vulnerability pattern matching
+- Multiple output formats (markdown, CSV, JSON)
 
-```
-Use the GitHub MCP tool to get the current user info (mcp_github_get_me or equivalent).
-Store the login name for later use.
-```
+### Prerequisites
 
-### Step 1.2: List Accessible Repositories
+1. **GitHub CLI (gh)** must be installed and authenticated:
+   ```bash
+   gh auth login
+   gh auth status  # Verify authentication
+   ```
 
-Gather all repositories the user can access:
+2. **Python 3.8+** must be available
 
-**If `{{owner}}` is specified:**
-- Use GitHub CLI: `gh api --paginate /users/{{owner}}/repos` or `gh api --paginate /orgs/{{owner}}/repos`
-
-**If `{{owner}}` is blank (default):**
-- Use GitHub CLI: `gh api --paginate /user/repos`
-
-**Apply filters:**
-- If `{{filter-language}}` is set, filter to only repos with that primary language
-- If `{{include-forks}}` is FALSE, exclude repos where `fork: true`
-
-**For each repository, collect:**
-- `full_name` (owner/repo)
-- `name`
-- `private` (true/false)
-- `language`
-- `default_branch`
-- `html_url`
+3. **For organization scanning with SSO:** Ensure your token is authorized:
+   ```bash
+   gh auth refresh -s read:org
+   ```
 
 ---
 
-## PHASE 2: Security Configuration Audit
+## Run the Scanner
 
-For each repository discovered in Phase 1, gather security configuration:
-
-### Step 2.1: Check Security & Analysis Settings
-
-Use GitHub CLI to get security settings:
-```powershell
-gh api /repos/{owner}/{repo} --jq '{
-  name: .name,
-  full_name: .full_name,
-  private: .private,
-  language: .language,
-  security_and_analysis: .security_and_analysis
-}'
-```
-
-**Extract for each repo:**
-- `dependabot_security_updates.status` (enabled/disabled/null)
-- `secret_scanning.status`
-- `secret_scanning_push_protection.status`
-
-### Step 2.2: Check for Dependabot Configuration File
-
-Check if `.github/dependabot.yml` exists:
-```powershell
-gh api /repos/{owner}/{repo}/contents/.github/dependabot.yml --jq '.name' 2>&1
-```
-
-**Classification:**
-- **Configured**: File exists AND `security_and_analysis.dependabot_security_updates.status` = "enabled"
-- **Partial**: File exists but security updates disabled, OR no file but security updates enabled
-- **Not Configured**: No file AND security updates disabled/null
-
----
-
-## PHASE 3: Vulnerability Scanning
-
-For repositories that could contain vulnerable packages (JavaScript/TypeScript projects):
-
-### Step 3.1: Find package.json Files
-
-**Primary method (REQUIRED):** Use the Git Trees API with recursive traversal to reliably find all `package.json` files in the repository. This method works immediately for all files (unlike code search which has indexing delays):
+Execute the Python script with the configured parameters:
 
 ```bash
-gh api /repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1 --jq '.tree[] | select(.path | endswith("package.json")) | .path'
+python scripts/scan-github-repos.py \
+  --owner "{{owner}}" \
+  --format "{{output-format}}" \
+  --output "{{report-path}}" \
+  --limit {{limit}} \
+  --workers {{workers}}
 ```
 
-This returns paths like:
-- `package.json` (root)
-- `vulnerable-app/package.json` (subdirectory)
-- `packages/frontend/package.json` (monorepo)
+**Add optional flags as needed:**
+- `--language "{{filter-language}}"` — Filter by language
+- `--include-forks` — Include forked repositories
+- `--quiet` — Suppress progress output
 
-**Fallback method (optional):** If the git trees API fails, try code search (note: recently pushed files may not be indexed):
+### Example Commands
+
 ```bash
-gh api '/search/code?q=filename:package.json+repo:{owner}/{repo}' --jq '.items[].path'
+# Scan your own repositories
+python scripts/scan-github-repos.py
+
+# Scan an organization (e.g., neudesic)
+python scripts/scan-github-repos.py --owner neudesic
+
+# Scan with limits for large orgs
+python scripts/scan-github-repos.py --owner neudesic --limit 100 --workers 10
+
+# Generate CSV report
+python scripts/scan-github-repos.py --owner neudesic --format csv --output audit.csv
+
+# Filter to TypeScript projects only  
+python scripts/scan-github-repos.py --owner neudesic --language TypeScript
 ```
 
-**IMPORTANT:** Do NOT skip subdirectories. Many projects store applications in subfolders (e.g., `apps/`, `packages/`, `src/`, or named folders like `vulnerable-app/`). The git trees recursive method captures ALL package.json files regardless of depth.
+---
 
-### Step 3.2: Analyze Each package.json
+## What the Script Does
 
-For each package.json found, decode and extract versions. Agents must NOT write helper scripts or temporary files to disk. Use in-memory decoding and parsing. Example one-liners shown for human operators only:
+### Phase 1: Repository Discovery
+- Lists all repositories for the specified owner/org
+- Filters by language and fork status
+- Applies limit if specified
 
-PowerShell (in-memory decode example — for human operator):
-```powershell
-$encoded = (gh api /repos/{owner}/{repo}/contents/{path-to-package.json} --jq '.content')
-$decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(($encoded -replace '\s','')))
-$pkg = $decoded | ConvertFrom-Json
+### Phase 2: Security Configuration Audit
+For each repository:
+- Fetches security settings (Dependabot, secret scanning)
+- Checks for `.github/dependabot.yml` configuration file
+- Classifies Dependabot status as: Configured / Partial / Not Configured
+
+### Phase 3: Vulnerability Scanning
+For repositories with JavaScript/TypeScript:
+- Uses Git Trees API (`recursive=1`) to find ALL `package.json` files
+- Decodes and parses each package.json in-memory
+- Checks for vulnerable versions of:
+  - `next` (15.0.0-15.0.4, 15.1.0-15.1.8, etc.)
+  - `react` (19.0.0, 19.1.0, 19.1.1, 19.2.0)
+  - `react-server-dom-*` packages
+
+### Phase 4: Report Generation
+Generates comprehensive report with:
+- Executive summary with counts
+- Detailed vulnerability findings with remediation commands
+- Dependabot status matrix for all repos
+- Prioritized recommendations
+
+---
+
+## Output
+
+The script exits with:
+- **Exit code 0**: No vulnerabilities found
+- **Exit code 1**: Error during scanning
+- **Exit code 2**: Vulnerabilities found (review report)
+
+### Sample Output
+
+```
+🔐 Authenticated as: SimmonsNeudesic
+📂 Scanning: neudesic
+📋 Listing repositories...
+   Found 523 repositories
+🔍 Scanning for vulnerabilities (using 10 workers)...
+   [1/523] neudesic/project-alpha ✅
+   [2/523] neudesic/project-beta 🚨 VULNERABLE
+   ...
+
+✅ Scan complete!
+📊 Results:
+   • Repositories scanned: 523
+   • Vulnerable: 3 ⚠️
+   • Dependabot enabled: 127/523
+📁 Report saved to: github-security-scan-report.md
 ```
 
-POSIX shell (human-run one-liner):
+---
+
+## Agent Instructions
+
+When this prompt is invoked:
+
+1. **DO NOT** manually iterate through repositories or make individual API calls
+2. **DO** run the Python script with appropriate parameters
+3. **DO** verify the script exists at `scripts/scan-github-repos.py`
+4. **DO** present the summary output and offer to display report contents
+5. **DO** suggest next steps based on findings
+
+If the script is not found, instruct the user to ensure they have the `react-security-reaction` repository cloned and are running from its root directory.
+
+---
+
+## Troubleshooting
+
+### "Could not get authenticated user"
 ```bash
-gh api /repos/{owner}/{repo}/contents/{path-to-package.json} --jq '.content' | base64 --decode | jq .
+gh auth login
 ```
 
-Agents should parse `package.json` content in-memory using available tools and return the parsed dependency versions as structured data in the prompt output.
-
-**Extract relevant dependencies:**
-- `next` (dependencies or devDependencies)
-- `react`
-- `react-dom`
-- `react-server-dom-webpack`
-- `react-server-dom-parcel`
-- `react-server-dom-turbopack`
-
-### Step 3.3: Vulnerability Pattern Matching
-
-Check extracted versions against vulnerable patterns:
-
-**Vulnerable Next.js Versions:**
-| Pattern | Vulnerable Range | Patched Version |
-|---------|-----------------|-----------------|
-| `^15.0.[0-4]` | 15.0.0 - 15.0.4 | 15.0.5 |
-| `^15.1.[0-8]` | 15.1.0 - 15.1.8 | 15.1.9 |
-| `^15.2.[0-5]` | 15.2.0 - 15.2.5 | 15.2.6 |
-| `^15.3.[0-5]` | 15.3.0 - 15.3.5 | 15.3.6 |
-| `^15.4.[0-7]` | 15.4.0 - 15.4.7 | 15.4.8 |
-| `^15.5.[0-6]` | 15.5.0 - 15.5.6 | 15.5.7 |
-| `^16.0.[0-6]` | 16.0.0 - 16.0.6 | 16.0.7 |
-| `14.3.0-canary.*` | All canary builds | 14.x stable |
-
-**Vulnerable React Versions:**
-- `19.0.0` (patched: 19.0.1)
-- `19.1.0`, `19.1.1` (patched: 19.1.2)
-- `19.2.0` (patched: 19.2.1)
-
-**Safe (Not Vulnerable):**
-- React 18.x (all versions)
-- Next.js 13.x (all versions)
-- Next.js 14.x stable (before canary builds)
-- Projects using only client-side React
-
----
-
-## PHASE 4: Generate Report
-
-IMPORTANT: Always generate the final report in the specified `{{output-format}}` and save to `{{report-path}}` unless specifically instructed otherwise.
-
-### Report Structure
-
-Create a comprehensive markdown report with the following sections:
-
-#### Executive Summary
-```markdown
-# GitHub Repository Security Scan Report
-
-**Scan Date:** [Current Date]
-**Scanned By:** [GitHub Username]
-**Owner/Org:** {{owner}} or [Username]
-**Total Repositories Scanned:** [count]
-
-## Summary
-
-| Metric | Count |
-|--------|-------|
-| Total Repos | [n] |
-| Vulnerable (CVE-2025-66478) | [n] |
-| Potentially At Risk | [n] |
-| Safe / Not Applicable | [n] |
-| Dependabot Enabled | [n] |
-| Dependabot Configured | [n] |
-| No Security Config | [n] |
+### "403 Forbidden" on organization repos
+```bash
+gh auth refresh -h github.com -s read:org
+# For SSO-protected orgs, authorize the token in GitHub settings
 ```
 
-#### Vulnerability Findings
-```markdown
-## 🚨 Critical Vulnerabilities Detected
+### Rate limiting
+- Reduce `--workers` to 2-3
+- Add `--limit` to scan fewer repos
+- Wait and retry
 
-### [Repo Name 1]
-- **Repository:** [owner/repo](url)
-- **Visibility:** Public/Private
-- **CVE:** CVE-2025-66478 / CVE-2025-55182
-- **CVSS:** 10.0 (Critical)
-- **Affected Package:** next@15.2.0
-- **Location:** `eCommApp/package.json`
-- **Remediation:** `npm install next@15.2.6`
-
-### [Repo Name 2]
-...
-```
-
-#### Dependabot Status Matrix
-```markdown
-## Dependabot Configuration Status
-
-| Repository | Visibility | Config File | Security Updates | Status |
-|------------|------------|-------------|------------------|--------|
-| repo-name-1 | Public | ✅ Yes | ✅ Enabled | ✅ Configured |
-| repo-name-2 | Private | ❌ No | ❌ Disabled | ⚠️ Not Configured |
-| repo-name-3 | Public | ✅ Yes | ❌ Disabled | ⚠️ Partial |
-```
-
-#### Security Recommendations
-```markdown
-## Recommendations
-
-### Immediate Actions (Critical)
-1. Repositories with CVE-2025-66478 vulnerability require immediate patching
-2. [List specific repos and commands]
-
-### High Priority
-1. Enable Dependabot for repos without security scanning
-2. Add `.github/dependabot.yml` to repos missing configuration
-
-### General Recommendations
-1. Enable secret scanning on all repositories
-2. Enable push protection for secrets
-3. Consider enabling GitHub Advanced Security for private repos
-```
-
----
-
-## PHASE 5: Save and Present Results
-
-### Step 5.1: Save Report
-
-Save the generated report to `{{report-path}}`:
-- If `{{output-format}}` is "markdown": Save as .md file
-- If `{{output-format}}` is "csv": Generate CSV with columns for each metric
-- If `{{output-format}}` is "json": Generate structured JSON output
-
-### Step 5.2: Summary Output
-
-Present a concise summary to the user:
-
-```
-✅ GitHub Security Scan Complete
-
-📊 Results Summary:
-   • Repositories Scanned: [n]
-   • Vulnerable: [n] ⚠️
-   • Dependabot Enabled: [n]/[total]
-
-📁 Full report saved to: {{report-path}}
-
-⚡ Next Steps:
-   1. Review vulnerable repositories immediately
-   2. Run /check-react-vulnerability-cve-2025-66478 on affected repos
-   3. Enable Dependabot on unprotected repositories
-```
-
----
-
-## Execution Notes
-
-### MCP Tools Available
-This prompt can leverage the following GitHub MCP tools:
-- `mcp_github_search_repositories` - Search for repos by criteria
-- `mcp_github_search_code` - Search for code patterns across repos
-- GitHub CLI (`gh`) - For API calls not available via MCP
-
-### Permissions Required
-- `repo` scope for private repository access
-- `read:org` scope for organization repository listing
-- Repository admin access to view some security settings
-
-### Limitations
-- Cannot access repos in organizations where you don't have membership
-- Private repos in other accounts require explicit collaboration
-- Some security settings only visible to admins
-- GitHub code search has rate limits
-
-### Error Handling
-- If a repo cannot be accessed, log it and continue
-- If package.json decode fails, mark as "Unable to scan"
-- If API rate limited, pause and retry with exponential backoff
-
----
-
-## Example Usage
-
-### Scan your own repositories
-```
-/scan-github-repos
-```
-
-### Scan a specific organization
-```
-/scan-github-repos owner=neudesic
-```
-
-### Scan only TypeScript projects
-```
-/scan-github-repos filter-language=TypeScript
-```
-
-### Generate CSV report
-```
-/scan-github-repos output-format=csv report-path=security-audit.csv
+### Script not found
+Ensure you're running from the repository root:
+```bash
+cd /path/to/react-security-reaction
+python scripts/scan-github-repos.py --help
 ```

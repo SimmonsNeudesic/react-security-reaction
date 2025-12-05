@@ -105,7 +105,41 @@ CVE-2025-66478 is a CVSS 10.0 critical vulnerability in React Server Components 
 
 ---
 
-## Prompt 4: Security Audit Summary
+## Prompt 4: Bulk Repository Security Scan ⭐ **RECOMMENDED**
+
+Use this prompt to scan multiple repositories for CVE-2025-66478 vulnerabilities:
+
+```
+/scan-github-repos owner=organization-name limit=100
+
+# Examples:
+/scan-github-repos owner=neudesic
+/scan-github-repos owner=client-org-name limit=50
+/scan-github-repos  # Scan your own repos
+```
+
+**What this does:**
+- Scans all accessible repositories in the specified organization
+- Detects vulnerable Next.js and React packages
+- Audits Dependabot configuration status
+- Generates comprehensive markdown reports
+- Uses parallel processing for efficiency (handles 500+ repos)
+
+**When to use:**
+- Client organization assessments
+- Multi-repo project audits
+- "See something, say something" initiatives
+- Large-scale vulnerability triage
+
+**Benefits:**
+- **Speed**: Parallel processing completes scans in minutes
+- **Completeness**: Reliable detection in subdirectories
+- **User Experience**: Simple prompt, detailed reports
+- **Scale**: Designed for large organizations
+
+---
+
+## Prompt 5: Security Audit Summary
 
 Use this to generate a summary report for stakeholders:
 
@@ -205,14 +239,17 @@ Format as a verification report suitable for documentation.
 
 1. **Context Matters**: Always make sure Copilot has access to the repository files, especially `package.json` and `package-lock.json`.
 
-2. **Iterative Approach**: Start with Prompt 1 for assessment, then move to more specific prompts based on findings.
+2. **Start with Bulk Scan**: For multi-repo assessments, begin with Prompt 4 (`/scan-github-repos`) for organization-wide visibility.
 
-3. **Documentation**: Save Copilot's responses as part of your security documentation.
+3. **Iterative Approach**: Start with bulk scanning, then use individual prompts (1-3, 5-6) for specific repositories that need remediation.
 
-4. **Verification**: Always manually verify Copilot's findings against the official CVE advisories.
+4. **Documentation**: Save Copilot's responses as part of your security documentation.
 
-5. **Customization**: Modify these prompts to include project-specific details like deployment environments, client names, or internal processes.
+5. **Verification**: Always manually verify Copilot's findings against the official CVE advisories.
+
+6. **Customization**: Modify these prompts to include project-specific details like deployment environments, client names, or internal processes.
 
 ---
 
-*Prompts developed by Neudesic Security Response Team - December 2025*
+*Prompts developed by Neudesic Security Response Team - December 2025*  
+*Last Updated: December 5, 2025 - Added bulk repository scanning prompt*
