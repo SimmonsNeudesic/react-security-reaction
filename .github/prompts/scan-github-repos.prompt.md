@@ -36,6 +36,7 @@ This prompt scans your accessible GitHub repositories to identify:
 ## Agent Execution Constraints (IMPORTANT)
 
 - Use only the GitHub MCP tools and the GitHub CLI (`gh`) described in this prompt.
+- If MCP or CLI tools are unavailable, do not proceed with execution locally. This tool is intended for wide access across multiple repositories via GitHub APIs - do not run locally unless explicitly allowed.
 - Do NOT create, write, or modify any PowerShell, Bash, or other helper scripts as a local or repository file during prompt execution. This does not prevent you from generating the final report file specified by `{{report-path}}`.
 - Process fetched file contents in-memory and return structured results (JSON/markdown/csv) as the prompt output rather than emitting new files on disk.
 - If you need to demonstrate decoding or parsing, show a one-line example (PowerShell or POSIX) for a human operator to run manually — do not execute or generate helper scripts as part of the agent run.
@@ -196,6 +197,8 @@ Check extracted versions against vulnerable patterns:
 ---
 
 ## PHASE 4: Generate Report
+
+IMPORTANT: Always generate the final report in the specified `{{output-format}}` and save to `{{report-path}}` unless specifically instructed otherwise.
 
 ### Report Structure
 
